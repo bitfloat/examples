@@ -3,6 +3,8 @@ library(geodata)
 library(tidyverse)
 library(bitfield)
 
+source("functions.R")
+
 set.seed(42)
 
 xmin <- 7.6

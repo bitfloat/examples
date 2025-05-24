@@ -3,6 +3,8 @@ library(geodata)
 library(tidyverse)
 library(bitfield)
 
+source("functions.R")
+
 set.seed(42)
 
 xmin <- 7.6
@@ -139,12 +141,6 @@ model_types <- list(
   cnn = list(name = "CNN", n_runs = 2, bias = 1.02, noise = 0.7)
 )
 
-## calculate standard deviation from prediction interval
-# for a normal distribution, 95% prediction interval is approximately ±1.96
-# standard deviations
-animals_sd <- (animals_upper - animals_lower) / (2 * 1.96) #is this really needed? should be the same values as above, no!?
-
-
 ## simulate runs for each model type
 ensemble <- map(names(model_types), function(name){
 
@@ -156,9 +152,10 @@ ensemble <- map(names(model_types), function(name){
     pertb <- animals_mean
     normNoise <- rnorm(ncell(animals_mean), mean = 0, sd = 1)
 
-    # Transform to match mean and standard deviation
+    # transform to match mean and standard deviation
     # For each pixel: mean*bias + (normNoise * noise_factor * animals_sd)
-    perturbed_values <- thisModel$bias * values(animals_mean) + normNoise * thisModel$noise * values(animals_sd)
+    perturbed_values <- thisModel$bias * values(animals_mean) + normNoise *
+      thisModel$noise * values(animals_sd)
     values(pertb) <- perturbed_values
     pertb[pertb < 0] <- 0
     names(pertb) <- paste0(name, "_run", ix)
