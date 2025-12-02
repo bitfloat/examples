@@ -23,17 +23,60 @@ names(footprint) <- "human_footprint"
 
 
 # 2. decode bitfield from project_1 to retrieve layers ----
-# animals_mean
-# animals_sd
-# landcover
+# Simulate data that would come from Project 1's bitfield
+template <- rast(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, res = 0.01)
+set.seed(42)
+
+animals_mean <- template
+values(animals_mean) <- rnorm(ncell(template), mean = 2.5, sd = 1.2)
+values(animals_mean)[values(animals_mean) < 0] <- 0
+names(animals_mean) <- "animals_mean"
+
+animals_sd <- template
+values(animals_sd) <- abs(rnorm(ncell(template), mean = 0.8, sd = 0.3))
+names(animals_sd) <- "animals_sd"
+
+# Landcover data
+landcover <- list()
+landcover$grassland <- template
+landcover$cropland <- template
+landcover$trees <- template
+landcover$water <- template
+
+# Create realistic landcover proportions that sum to 1
+for(i in 1:ncell(template)) {
+  props <- runif(4)
+  props <- props / sum(props)
+  landcover$grassland[i] <- props[1]
+  landcover$cropland[i] <- props[2]
+  landcover$trees[i] <- props[3]
+  landcover$water[i] <- props[4]
+}
 
 
 # 3. decode bitfield from project_2 to retrieve layers ----
-# carrying_capacity
-# exceedance
-# exceedance_risk
-# deficit_type
-# deficit_magnitude
+# Simulate data that would come from Project 2's bitfield
+carrying_capacity <- template
+values(carrying_capacity) <- rnorm(ncell(template), mean = 1.8, sd = 0.9)
+values(carrying_capacity)[values(carrying_capacity) < 0] <- 0
+names(carrying_capacity) <- "carrying_capacity"
+
+exceedance <- animals_mean / carrying_capacity
+names(exceedance) <- "exceedance"
+
+exceedance_risk <- template
+values(exceedance_risk) <- sample(0:63, ncell(template), replace = TRUE)
+names(exceedance_risk) <- "exceedance_risk"
+
+deficit_type <- template
+values(deficit_type) <- sample(0:3, ncell(template), replace = TRUE)
+names(deficit_type) <- "deficit_type"
+levels(deficit_type) <- data.frame(id = 0:3,
+                                   limitation = c("none", "water", "forage", "soil"))
+
+deficit_magnitude <- template
+values(deficit_magnitude) <- sample(0:7, ncell(template), replace = TRUE)
+names(deficit_magnitude) <- "deficit_magnitude"
 
 
 # 4. simulate market distortions ----
@@ -105,7 +148,7 @@ levels(distortion_magnitude) <- data.frame(id = 0:7,
                                                           "variable"))
 
 # plot
-plot(c(lc_dom, footprint, distortion_type, distortion_magnitude))
+plot(c(footprint, distortion_type, distortion_magnitude))
 
 
 # 5. calculate GDP adjustment estimates ----
@@ -306,10 +349,10 @@ cross_sectoral_synergy <-
   (ecosystem_synergy * 4) +      # bit 2: ecosystem conservation
   (economic_synergy * 2) +       # bit 1: economic development
   (climate_synergy * 1)          # bit 0: climate resilience
-names(cross_sectoral_synergy) <- "cross-sectoral_synergy"
+names(cross_sectoral_synergy) <- "synergies"
 levels(cross_sectoral_synergy) <- data.frame(
   id = 0:15,
-  trajectory = c("none", "climate", "economic", "economic + climate", "ecosystem",
+  synergies = c("none", "climate", "economic", "economic + climate", "ecosystem",
                  "ecosystem + climate", "ecosystem + economic",
                  "ecosystem + economic + climate", "water", "water + climate",
                  "water + economic", "water + economic + climate",
@@ -322,92 +365,116 @@ plot(c(intervention_priority, cross_sectoral_synergy))
 
 
 # 11. Create bitfield registry ----
-# socio_registry <- bf_registry(
-#   name = "socioeconomic_planning",
-#   description = "Socioeconomic analysis and intervention planning metrics"
-# )
 #
-# # Add market distortion type (3 bits)
-# socio_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(distortion_type),
-#   x = distortion_type,
-#   fields = list(sign = 0, exponent = 0, mantissa = 3),
-#   registry = socio_registry
-# )
-#
-# # Add market distortion magnitude (3 bits)
-# socio_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(distortion_magnitude),
-#   x = distortion_magnitude,
-#   fields = list(sign = 0, exponent = 0, mantissa = 3),
-#   registry = socio_registry
-# )
-#
-# # Add GDP adjustment estimates (6 bits)
-# socio_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(gdp_adjustment),
-#   x = gdp_adjustment,
-#   fields = list(sign = 0, exponent = 0, mantissa = 6),
-#   registry = socio_registry
-# )
-#
-# # Add Economic-Ecological Misalignment Index (8 bits)
-# socio_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(misalignment),
-#   x = economic_ecological_misalignment,
-#   fields = list(sign = 0, exponent = 0, mantissa = 8),
-#   registry = socio_registry
-# )
-#
-# # Add system trajectory (3 bits)
-# socio_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(system_trajectory),
-#   x = system_trajectory,
-#   fields = list(sign = 0, exponent = 0, mantissa = 3),
-#   registry = socio_registry
-# )
-#
-# # Add intervention priority (5 bits)
-# socio_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(intervention_priority),
-#   x = intervention_priority,
-#   fields = list(sign = 0, exponent = 0, mantissa = 5),
-#   registry = socio_registry
-# )
-#
-# # Add cross-sectoral synergy (4 bits)
-# socio_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(cross_sectoral_synergy),
-#   x = cross_sectoral_synergy,
-#   fields = list(sign = 0, exponent = 0, mantissa = 4),
-#   description = c(
-#     "Bitmap encoding of cross-sectoral synergies where:",
-#     "- bit 3 (value 8): Water security synergy potential",
-#     "- bit 2 (value 4): Ecosystem conservation synergy potential",
-#     "- bit 1 (value 2): Economic development synergy potential",
-#     "- bit 0 (value 1): Climate resilience synergy potential"
-#   ),
-#   registry = socio_registry
-# )
-#
-#
-# # Encode bitfield
-# socio_field <- bf_encode(registry = socio_registry)
-#
-# # Create a raster version of the bitfield
-# socio_rast <- rast(carrying_capacity)
-# values(socio_rast) <- socio_field[,1]  # Assuming one column output
-# names(socio_rast) <- "socioeconomic_planning_bitfield"
-#
-# # Plot the bitfield
-# plot(socio_rast)
+socio_registry <- bf_registry(
+  name = "socioeconomic_planning",
+  description = "Socioeconomic analysis and intervention planning metrics"
+)
+
+# Prepare data for bitfield encoding
+socio_data <- data.frame(
+  distortion_type = as.integer(values(distortion_type)),
+  distortion_magnitude = as.integer(values(distortion_magnitude)),
+  gdp_adjustment = as.integer(values(gdp_adjustment)),
+  misalignment = as.integer(values(misalignment)),
+  system_trajectory = as.integer(values(system_trajectory)),
+  intervention_priority = as.integer(values(intervention_priority)),
+  cross_sectoral_synergy = as.integer(values(cross_sectoral_synergy))
+)
+
+# Add market distortion type (3 bits)
+socio_registry <- bf_map(
+  protocol = "category",
+  data = socio_data,
+  registry = socio_registry,
+  name = "Market distortion type",
+  x = distortion_type,
+  na.val = 0
+)
+
+# Add market distortion magnitude (3 bits)
+socio_registry <- bf_map(
+  protocol = "category",
+  data = socio_data,
+  registry = socio_registry,
+  name = "Market distortion magnitude",
+  x = distortion_magnitude,
+  na.val = 0
+)
+
+# Add GDP adjustment estimates (6 bits)
+socio_registry <- bf_map(
+  protocol = "integer",
+  data = socio_data,
+  registry = socio_registry,
+  name = "GDP adjustment estimates",
+  x = gdp_adjustment,
+  fields = list(significand = 6),
+  na.val = 0
+)
+
+# Add Economic-Ecological Misalignment Index (8 bits)
+socio_registry <- bf_map(
+  protocol = "integer",
+  data = socio_data,
+  registry = socio_registry,
+  name = "Economic-Ecological Misalignment Index",
+  x = misalignment,
+  fields = list(significand = 8),
+  na.val = 0
+)
+
+# Add system trajectory (3 bits)
+socio_registry <- bf_map(
+  protocol = "category",
+  data = socio_data,
+  registry = socio_registry,
+  name = "System trajectory",
+  x = system_trajectory,
+  na.val = 0
+)
+
+# Add intervention priority (5 bits)
+socio_registry <- bf_map(
+  protocol = "integer",
+  data = socio_data,
+  registry = socio_registry,
+  name = "Intervention priority",
+  x = intervention_priority,
+  fields = list(significand = 5),
+  na.val = 0
+)
+
+# Add cross-sectoral synergy (4 bits)
+socio_registry <- bf_map(
+  protocol = "category",
+  data = socio_data,
+  registry = socio_registry,
+  name = "Cross-sectoral synergy",
+  x = cross_sectoral_synergy,
+  na.val = 0
+)
+
+# Encode bitfield
+socio_field <- bf_encode(registry = socio_registry)
+
+# Create a raster version of the bitfield
+socio_rast <- rast(carrying_capacity)
+values(socio_rast) <- socio_field[,1]  # Use the encoded bitfield values
+names(socio_rast) <- "socioeconomic_planning_bitfield"
+
+# Plot the bitfield
+plot(socio_rast, main = "Project 3: Socioeconomic Planning Bitfield (32-bit)")
+
+# Save the registry for downstream use
+saveRDS(socio_registry, file = "project3_registry.rds")
+writeRaster(socio_rast, "project3_bitfield.tif", overwrite = TRUE)
+
+cat("Project 3 bitfield created successfully!\n")
+cat("Registry width:", socio_registry@width, "bits\n")
+cat("Data length:", socio_registry@length, "observations\n")
+cat("Bitfield values range:", range(values(socio_rast), na.rm = TRUE), "\n")
+
 
 # 12. create plot items ----
 #

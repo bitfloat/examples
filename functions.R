@@ -416,18 +416,21 @@ library(svglite)
 
 }
 
-.simulate_uncertaintySource <- function(land, elevation, footprint){
+.simulate_uncertainty <- function(land, elevation, footprint){
 
   # assumption that areas with low footprint have worse data cover and thus more uncertainty
   data_coverage <- footprint < 10
+  data_confidence <- clamp(footprint / 50, 0, 1)
 
   # assumption that topographically more complex areas have more uncertainty
   slope <- terrain(elevation, "slope", unit = "degrees")
   topo_complexity <- focal(slope, w = matrix(1,3,3), fun = var, na.rm = TRUE)
+  topo_complexity[is.na(topo_complexity)] <- 0
   topo_complexity <- (topo_complexity - min(values(topo_complexity), na.rm = TRUE)) /
     (max(values(topo_complexity), na.rm = TRUE) -
        min(values(topo_complexity), na.rm = TRUE))
   topo_complexity <- as.logical(topo_complexity)
+  topo_confidence <- 1 - topo_complexity
 
   # assumption that pixels with more landcover classes have more uncertainty
   land_complexity <- 0
@@ -435,6 +438,7 @@ library(svglite)
     temp <- focal(land[[layer]] > 0.3, w = matrix(1,3,3), fun = sum, na.rm = TRUE)
     land_complexity <- land_complexity + (temp > 1 & temp < 9)
   }
+  land_confidence <- 1 - clamp(land_complexity / length(names(land)), 0, 1)
 
   # assumption that pixels with different landcover in the neighbourhood have more uncertainty
   edges <- 0
@@ -445,15 +449,24 @@ library(svglite)
     })
     edges <- edges + temp
   }
+  edge_confidence <- 1 - clamp(edges / length(names(land)), 0, 1)
 
-  out <-ifel(topo_complexity > 0.3, 1,
+  source <-ifel(topo_complexity > 0.3, 1,
              ifel(data_coverage > 0.3, 0,
                    ifel(land_complexity > 0 | edges > 0, 2, 3)))
 
-  names(out) <- "uncertainty_source"
-  levels(out) <- data.frame(id = 0:3,
-                            uncertainty = c("data coverage", "topography",
-                                            "heterogeneity", "edge effects"))
+  levels(source) <- data.frame(id = 0:3,
+                               type = c("data coverage", "topography",
+                                        "heterogeneity", "edge effects"))
+  names(source) <- "type"
+
+  # Combined confidence (0-1, then scale to 0-15 for 4 bits)
+  level <- (data_confidence + topo_confidence +
+                            land_confidence + edge_confidence) / 4
+  # level <- round(combined_confidence * 15)
+  names(level) <- "level"
+
+  out <- c(source, level)
 
   return(out)
 }

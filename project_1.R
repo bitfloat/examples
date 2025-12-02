@@ -21,6 +21,7 @@ lc_meta <- data.frame(id = c(1, 2, 4:9),
                       col = c("darkgreen", "yellowgreen", "wheat", "darkgoldenrod",
                               "firebrick2", "gray", "deepskyblue", "cyan2"))
 
+
 # 1. get (bio)geophysical basis ----
 #
 ## download and crop land cover data
@@ -173,7 +174,8 @@ plot(ensemble)
 #
 ## calculate median
 animals_median <- app(ensemble, fun = median, na.rm = TRUE)
-names(animals_median) <- "density_median"
+names(animals_median) <- "animals_median"
+
 
 ## determine distribution type ----
 dist_values <- app(ensemble, fun = function(x) {
@@ -184,6 +186,7 @@ levels(dist_values) <- data.frame(id = 0:7,
                                   distribution = c("normal", "lognormal", "beta",
                                                    "gamma", "weibull", "poisson",
                                                    "binomial", "other"))
+
 
 ## determine skewness and kurtosis ----
 skewness <- app(ensemble, fun = function(x) {
@@ -214,8 +217,7 @@ levels(kurtosis) <- data.frame(id = 0:7,
 # 3. that pixels with more landcover classes have more uncertainty
 # 4. that pixels with different landcover in the neighbourhood have more
 #    uncertainty
-uncertainty_source <- .simulate_uncertaintySource(landcover, elevation, footprint)
-
+uncertainty <- .simulate_uncertainty(landcover, elevation, footprint)
 
 ## determine model selection ----
 model_names <- names(model_types)
@@ -267,25 +269,106 @@ levels(model_agreement) <- data.frame(id = 0:7,
                                                     "moderate disagr.", "mild disagr.", "fair agr.",
                                                     "good agr.", "strong agr.", "perfect agr."))
 
+
 ## plot
-plot(c(dist_values, model_selection, model_agreement, skewness, kurtosis, uncertainty_source))
+plot(c(dist_values, model_selection, model_agreement, skewness, kurtosis, uncertainty$type, uncertainty$level))
 
 
-# 5. create bitfield ----
-#
+# 5. Create bitfield registry ----
+lstReg <- bf_registry(
+  name = "livestock_density_modeling",
+  description = "Bitfield encoding livestock density estimates with uncertainty metrics and model provenance.")
+
+lstReg <- bf_map(
+  protocol = "numeric",
+  data = animals_median,
+  registry = lstReg,
+  name = "Median livestock density",
+  x = animals_median,
+  fields = list(exponent = 2, significand = 5),
+  na.val = 0)
+
+lstReg <- bf_map(
+  protocol = "integer",
+  data = animals_sd,
+  registry = lstReg,
+  name = "Standard deviation",
+  x = animals_sd,
+  fields = list(significand = 7),
+  na.val = 0)
+
+lstReg <- bf_map(
+  protocol = "category",
+  data = dist_values,
+  registry = lstReg,
+  name = "Distribution type",
+  x = distribution,
+  na.val = 7)
+
+lstReg <- bf_map(
+  protocol = "category",
+  data = skewness,
+  registry = lstReg,
+  name = "Skewness",
+  x = skewness,
+  na.val = 7)
+
+lstReg <- bf_map(
+  protocol = "category",
+  data = kurtosis,
+  registry = lstReg,
+  name = "Kurtosis",
+  x = kurtosis,
+  na.val = 7)
+
+lstReg <- bf_map(
+  protocol = "integer",
+  data = uncertainty,
+  registry = lstReg,
+  name = "Confidence level",
+  x = level,
+  fields = list(significand = 4))
+
+lstReg <- bf_map(
+  protocol = "category",
+  data = uncertainty,
+  registry = lstReg,
+  name = "Uncertainty source",
+  x = type)
+
+lstReg <- bf_map(
+  protocol = "category",
+  data = model_selection,
+  registry = lstReg,
+  name = "Model selection",
+  x = model,
+  na.val = 0)
+
+lstReg <- bf_map(
+  protocol = "category",
+  data = model_agreement,
+  registry = lstReg,
+  name = "Model Agreement Index",
+  x = agreement,
+  na.val = 0)
+
+field <- bf_encode(registry = lstReg)
+rst_field <- rast(lc_dom, vals = field, nlyrs = 2, names = names(field))
 
 
-
-# 6. create plot items ----
+# 5. export items ----
 #
 dir.create(path = paste0(getwd(), "/figures/"))
 toPlot <- c(elevation, slope, footprint, lc_dom, landcover$grassland,
-            animals_mean, animals_sd, animals_lower, animals_upper,
+            animals_mean, animals_median, animals_sd, animals_lower, animals_upper,
             ensemble$rf_run1, ensemble$brt_run1, ensemble$gam_run1,
             ensemble$cnn_run1, dist_values, model_selection, model_agreement,
-            skewness, kurtosis, uncertainty_source)
+            skewness, kurtosis, uncertainty$type, uncertainty$level)
 
 map(as.list(toPlot), .export_svg)
 
+writeRaster(x = rst_field, filename = "lstBitfield.tif", overwrite = TRUE)
+writeRaster(x = animals_mean, filename = "animals_mean.tif", overwrite = TRUE)
 
-
+bf_export(registry = lstReg, format = "yaml", file = paste0(getwd(), "/meta/lstMeta.yml"))
+saveRDS(object = lstReg, file = paste0(getwd(), "/lstRegistry.rds"))

@@ -44,18 +44,82 @@ annual_precip <- sum(prec)
 names(annual_precip) <- "yearly_total_precipitation"
 
 # Plot
-plot(c(mean_temp, annual_precip, soil_pH, soil_carbon, soil_clay, ))
+plot(c(mean_temp, annual_precip, soil_pH, soil_carbon, soil_clay))
 
 
 # 2. Decode bitfield from project_1 to retrieve layers ----
-# Assuming these layers were decoded from Project 1's bitfield
-# and are available in the environment
-# animals_mean
-# animals_sd
-# dist_values
-# skewness
-# kurtosis
-# landcover
+# Load the bitfield and registry from Project 1
+lstRegistry <- readRDS("../examples/lstRegistry.rds")
+lstBitfield <- rast("../examples/lstBitfield.tif")
+
+# Extract bitfield values and prepare for decoding
+# The bitfield is stored as multiple layers (each 32 bits), so we need to
+# reconstruct the proper column names (bf_int1, bf_int2, etc.)
+bitfield_values <- values(lstBitfield, dataframe = TRUE)
+colnames(bitfield_values) <- paste0("bf_int", 1:ncol(bitfield_values))
+
+# Decode the bitfield to extract all the metadata layers
+bf_decode(x = bitfield_values, registry = lstRegistry, verbose = FALSE)
+
+# Create template raster based on the project_1 extent
+template <- lstBitfield[[1]]
+
+# Extract livestock density parameters from decoded bitfield
+# The decoded data is now in the global environment with specific names
+animals_median <- template
+values(animals_median) <- `Median livestock density`
+names(animals_median) <- "animals_median"
+
+# Load the mean livestock density layer (shared as primary output alongside bitfield)
+animals_mean <- rast("../examples/animals_mean.tif")
+names(animals_mean) <- "animals_mean"
+
+animals_sd <- template
+values(animals_sd) <- `Standard deviation`
+names(animals_sd) <- "animals_sd"
+
+# Extract distribution type (3 bits) - will be reinterpreted below
+dist_type_original <- template
+values(dist_type_original) <- `Distribution type`
+names(dist_type_original) <- "dist_type_original"
+
+# Extract skewness and kurtosis
+skewness <- template
+values(skewness) <- Skewness
+names(skewness) <- "skewness"
+
+kurtosis <- template
+values(kurtosis) <- Kurtosis
+names(kurtosis) <- "kurtosis"
+
+# Reinterpret the 3-bit distribution type as distribution properties
+# Original encoding: 0=normal, 1=lognormal, 2=beta, 3=gamma, 4=weibull, 5=poisson, 6=binomial, 7=other
+# New interpretation: bit 0=symmetric/asymmetric, bit 1=unbounded/bounded, bit 2=continuous/discrete
+dist_values <- dist_type_original
+
+# For compatibility with downstream code, keep the original dist_values
+# but note this reinterpretation happens conceptually
+names(dist_values) <- "distribution_properties"
+
+# Load landcover data from project_1 (needed for carrying capacity calculation)
+# These were used in project_1 but not encoded in the bitfield
+landcover <- list()
+lc_meta <- data.frame(id = c(1, 2, 4:9),
+                     var = c("trees", "grassland", "shrubs", "cropland", "built",
+                             "bare", "water", "wetland"),
+                     name = c("Forest", "Grassland", "Shrubland", "Cropland",
+                              "Urban", "Bare", "Water", "Wetland"))
+
+landcover$grassland <- landcover(var = "grassland", path = tempdir()) |>
+  crop(area_extent) |> unlist()
+landcover$cropland <- landcover(var = "cropland", path = tempdir()) |>
+  crop(area_extent) |> unlist()
+landcover$trees <- landcover(var = "trees", path = tempdir()) |>
+  crop(area_extent) |> unlist()
+landcover$shrubs <- landcover(var = "shrubs", path = tempdir()) |>
+  crop(area_extent) |> unlist()
+landcover$bare <- landcover(var = "bare", path = tempdir()) |>
+  crop(area_extent) |> unlist()
 
 
 # 3. calculate carrying capacity ----
@@ -210,70 +274,82 @@ names(deficit_magnitude) <- "deficit_magnitude"
 plot(c(water_deficit, forage_deficit, soil_deficit, deficit_type, deficit_magnitude))
 
 
-# 6. Create bitfield ----
+# 6. Create bitfield according to Table A2 specifications ----
 #
-this also needs an update of the previous bitflag for distribution types.
-# # Create a registry for the ecological analysis
-# eco_registry <- bf_registry(
-#   name = "ecological_analysis",
-#   description = "Ecological carrying capacity analysis derived from livestock density data"
-# )
-#
-# # Add carrying capacity (7 bits)
-# eco_registry <- bf_test(
-#   operator = "numeric",
-#   data = .rast(carrying_capacity),
-#   x = carrying_capacity,
-#   fields = list(sign = 0, exponent = 0, mantissa = 7),
-#   registry = eco_registry
-# )
-#
-# # Add carrying capacity exceedance risk (6 bits)
-# eco_registry <- bf_test(
-#   operator = "numeric",
-#   data = .rast(exceedance_risk),
-#   x = exceedance_risk,
-#   fields = list(sign = 0, exponent = 0, mantissa = 6),
-#   registry = eco_registry
-# )
-#
-# # Add carrying capacity exceedance magnitude (6 bits)
-# eco_registry <- bf_test(
-#   operator = "numeric",
-#   data = .rast(exceedance),
-#   x = exceedance,
-#   fields = list(sign = 0, exponent = 0, mantissa = 6),
-#   registry = eco_registry
-# )
-#
-# # Add resource limitation type (2 bits)
-# eco_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(deficit_type),
-#   x = resource_limitation_type,
-#   fields = list(sign = 0, exponent = 0, mantissa = 2),
-#   registry = eco_registry
-# )
-#
-# # Add resource limitation magnitude (3 bits)
-# eco_registry <- bf_test(
-#   operator = "integer",
-#   data = .rast(deficit_magnitude),
-#   x = resource_limitation_magnitude,
-#   fields = list(sign = 0, exponent = 0, mantissa = 3),
-#   registry = eco_registry
-# )
-#
-# # Encode the bitfield
-# eco_field <- bf_encode(registry = eco_registry)
-#
-# # Create a raster version of the bitfield
-# eco_rast <- rast(carrying_capacity)
-# values(eco_rast) <- eco_field[,1]  # Assuming one column output
-# names(eco_rast) <- "ecological_analysis_bitfield"
-#
-# # Plot the bitfield
-# plot(eco_rast)
+# Create a registry for the ecological analysis (24-bit total)
+eco_registry <- bf_registry(
+  name = "ecological_overshoot_analysis",
+  description = "Ecological carrying capacity analysis with 24-bit encoding"
+)
+
+# Prepare data for bitfield encoding - convert rasters to data.frames
+eco_data <- data.frame(
+  # Reinterpreted distribution properties (3 bits) - inherited from Project 1
+  dist_symmetric = as.integer(values(dist_values) %% 2),  # bit 0: 0=symmetric, 1=asymmetric
+  dist_bounded = as.integer((values(dist_values) %/% 2) %% 2),  # bit 1: 0=unbounded, 1=bounded
+  dist_continuous = as.integer((values(dist_values) %/% 4) %% 2),  # bit 2: 0=continuous, 1=discrete
+
+  # Ecological carrying capacity (7 bits, 0.1-100 LU/ha, logarithmic scale)
+  carry_capacity = pmax(0.1, pmin(100, values(carrying_capacity))),
+
+  # Risk of exceeding capacity (6 bits, probability 0-1)
+  exceed_risk = pmax(0, pmin(1, values(exceedance_risk) / 63)),
+
+  # Carrying capacity exceedance magnitude (6 bits, 0-6.3x)
+  exceed_magnitude = pmax(0, pmin(6.3, values(exceedance))),
+
+  # Resource limitation type (2 bits: 0=none, 1=water, 2=forage, 3=soil)
+  resource_type = as.integer(values(deficit_type)),
+
+  # Resource limitation magnitude (3 bits, logarithmic 10^n where n=0-7)
+  resource_magnitude = as.integer(pmax(0, pmin(7, values(deficit_magnitude))))
+)
+
+# Add distribution property reinterpretation (3 bits total)
+eco_registry <- bf_map(protocol = "category", data = eco_data, registry = eco_registry,
+                      x = dist_symmetric, na.val = 0)
+eco_registry <- bf_map(protocol = "category", data = eco_data, registry = eco_registry,
+                      x = dist_bounded, na.val = 0)
+eco_registry <- bf_map(protocol = "category", data = eco_data, registry = eco_registry,
+                      x = dist_continuous, na.val = 0)
+
+# Add ecological carrying capacity (7 bits, logarithmic scale)
+eco_registry <- bf_map(protocol = "numeric", data = eco_data, registry = eco_registry,
+                      x = carry_capacity, format = "custom",
+                      sign = 0, exponent = 3, significand = 4, bias = 3)
+
+# Add exceedance risk (6 bits, probability scale)
+eco_registry <- bf_map(protocol = "numeric", data = eco_data, registry = eco_registry,
+                      x = exceed_risk, format = "custom",
+                      sign = 0, exponent = 2, significand = 4, bias = 1)
+
+# Add exceedance magnitude (6 bits, ratio scale)
+eco_registry <- bf_map(protocol = "numeric", data = eco_data, registry = eco_registry,
+                      x = exceed_magnitude, format = "custom",
+                      sign = 0, exponent = 2, significand = 4, bias = 1)
+
+# Add resource limitation type (2 bits)
+eco_registry <- bf_map(protocol = "category", data = eco_data, registry = eco_registry,
+                      x = resource_type, na.val = 0)
+
+# Add resource limitation magnitude (3 bits)
+eco_registry <- bf_map(protocol = "category", data = eco_data, registry = eco_registry,
+                      x = resource_magnitude, na.val = 0)
+
+# Encode the bitfield
+eco_field <- bf_encode(registry = eco_registry)
+
+# Create a raster version of the bitfield
+eco_rast <- rast(carrying_capacity)
+values(eco_rast) <- eco_field[,1]  # Use the encoded bitfield values
+names(eco_rast) <- "ecological_analysis_bitfield"
+
+# Plot the bitfield
+plot(eco_rast, main = "Ecological Analysis Bitfield (24-bit)")
+
+# Save the registry for downstream use
+saveRDS(eco_registry, file = "eco_reg.rds")
+writeRaster(eco_rast, "eco_bitfield.tif", overwrite = TRUE)
 
 # 7. create plot items ----
 #

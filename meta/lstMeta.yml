@@ -1,0 +1,40 @@
+schemaVersion: '4.5'
+identifiers:
+- identifierType: DOI
+  identifier: .na.character
+titles:
+- title: livestock_density_modeling
+descriptions:
+- description: Bitfield encoding livestock density estimates with uncertainty metrics
+    and model provenance.
+  descriptionType: Abstract
+- description: |-
+    Bitfield registry with 34 bits across 31824 observations, containing 9 flags
+    Flag legend:
+    Bit 1-7 (float encoding): 'animals_median' is encoded as floating-point bit-sequence.
+    Bit 8-14 (int encoding): 'animals_sd' is encoded as integer bit-sequence.
+    Bit 15-17 (enum encoding): 'distribution' is encoded as categorical enumeration.
+    Bit 18-20 (enum encoding): 'skewness' is encoded as categorical enumeration.
+    Bit 21-23 (enum encoding): 'kurtosis' is encoded as categorical enumeration.
+    Bit 24-27 (int encoding): 'level' is encoded as integer bit-sequence.
+    Bit 28-29 (enum encoding): 'type' is encoded as categorical enumeration.
+    Bit 30-31 (enum encoding): 'model' is encoded as categorical enumeration.
+    Bit 32-34 (enum encoding): 'agreement' is encoded as categorical enumeration.
+  descriptionType: TechnicalInfo
+resourceType:
+  resourceTypeGeneral: Software
+  resourceType: Bitfield Registry
+publicationYear: '2025'
+language: en
+alternateIdentifiers:
+- alternateIdentifier: 60c9dd21faec0faad85d6a1dbaf3aff5
+  alternateIdentifierType: MD5
+publisher: Individual Researcher
+version: 081.451.20251201
+dates:
+- date: '2025-12-01'
+  dateType: Created
+rightsList:
+- rights: MIT
+  rightsURI: https://opensource.org/licenses/MIT
+
